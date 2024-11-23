@@ -1,0 +1,19 @@
+[package]
+name = "cushy_video"
+version = "0.1.0"
+edition = "2021"
+exclude = ["media"]
+
+[dependencies]
+cushy = { git = "https://github.com/khonsulabs/cushy.git", branch = "main", features = [
+    "tokio",
+    "tokio-multi-thread",
+] }
+gstreamer = "0.23" # video decoder
+gstreamer-app = "0.23" # appsink
+gstreamer-base = "0.23" # basesrc
+glib = "0.20" # gobject traits and error type
+url = "2" # URL parsing
+thiserror = "1" # error handling
+html-escape = "0.2.13" # subtitle unescaping
+log = "0.4"

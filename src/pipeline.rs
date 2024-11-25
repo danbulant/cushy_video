@@ -7,7 +7,10 @@ use std::{
 };
 
 use cushy::{
-    figures::{units::UPx, Rect},
+    figures::{
+        units::{Px, UPx},
+        IntoUnsigned, Rect,
+    },
     kludgine::{self, wgpu},
     RenderOperation,
 };
@@ -304,7 +307,7 @@ impl VideoPipeline {
         }
     }
 
-    fn prepare(&mut self, queue: &wgpu::Queue, video_id: u64, bounds: Rect<UPx>) {
+    fn prepare(&mut self, queue: &wgpu::Queue, video_id: u64, bounds: Rect<Px>) {
         if let Some(video) = self.videos.get(&video_id) {
             let uniforms = Uniforms {
                 rect: [
@@ -327,38 +330,23 @@ impl VideoPipeline {
 
     fn draw(&self, pass: &mut wgpu::RenderPass, viewport: Rect<UPx>, video_id: u64) {
         if let Some(video) = self.videos.get(&video_id) {
-            // let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            //     label: Some("iced_video_player render pass"),
-            //     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            //         view: target,
-            //         resolve_target: None,
-            //         ops: wgpu::Operations {
-            //             load: wgpu::LoadOp::Load,
-            //             store: wgpu::StoreOp::Store,
-            //         },
-            //     })],
-            //     depth_stencil_attachment: None,
-            //     timestamp_writes: None,
-            //     occlusion_query_set: None,
-            // });
-
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &video.bg0, &[]);
-            // pass.set_viewport(
-            //     viewport.origin.x as _,
-            //     viewport.origin.y as _,
-            //     viewport.size.width as _,
-            //     viewport.size.height as _,
-            //     0.0,
-            //     1.0,
-            // );
+            pass.set_viewport(
+                viewport.origin.x.get() as _,
+                viewport.origin.y.get() as _,
+                viewport.size.width.get() as f32,
+                viewport.size.height.get() as f32,
+                0.0,
+                1.0,
+            );
             pass.draw(0..4, 0..1);
         }
     }
 }
 
 pub(crate) struct VideoRO {
-    pipeline: Option<VideoPipeline>,
+    pipeline: VideoPipeline,
 }
 
 impl RenderOperation for VideoRO {
@@ -366,21 +354,19 @@ impl RenderOperation for VideoRO {
     type Prepared = VideoPrimitive;
 
     fn new(graphics: &mut cushy::kludgine::Graphics<'_>) -> Self {
-        VideoRO { pipeline: None }
+        VideoRO {
+            pipeline: VideoPipeline::new(graphics),
+        }
     }
 
     fn prepare(
         &mut self,
         context: Self::DrawInfo,
-        origin: cushy::figures::Point<cushy::figures::units::Px>,
+        rect: Rect<Px>,
         graphics: &mut cushy::kludgine::Graphics<'_>,
     ) -> Self::Prepared {
-        let pipeline = self
-            .pipeline
-            .get_or_insert_with(|| VideoPipeline::new(graphics));
-
         if context.upload_frame {
-            pipeline.upload(
+            self.pipeline.upload(
                 graphics.device(),
                 graphics.queue(),
                 context.video_id,
@@ -389,26 +375,22 @@ impl RenderOperation for VideoRO {
                 context.frame.lock().expect("lock frame mutex").as_slice(),
             );
         }
-
-        pipeline.prepare(graphics.queue(), context.video_id, graphics.clip_rect());
+        self.pipeline
+            .prepare(graphics.queue(), context.video_id, rect);
         context
     }
 
     fn render(
         &self,
         prepared: &Self::Prepared,
-        origin: cushy::figures::Point<cushy::figures::units::Px>,
-        opacity: f32,
+        _rect: Rect<Px>,
+        _opacity: f32,
         graphics: &mut cushy::kludgine::RenderingGraphics<'_, '_>,
     ) {
-        let pipeline = self.pipeline.as_ref().expect("prepare sets pipeline");
         let rect = graphics.clip_rect();
-        pipeline.draw(
-            // target,
-            graphics.pass_mut(),
-            rect,
-            prepared.video_id,
-        );
+        dbg!(rect);
+        self.pipeline
+            .draw(graphics.pass_mut(), rect.into_unsigned(), prepared.video_id);
     }
 }
 

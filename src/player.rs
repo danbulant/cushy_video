@@ -5,15 +5,19 @@ use std::{
 
 use cushy::{
     context::{GraphicsContext, LayoutContext},
-    figures::{units::UPx, Size},
-    value::{Destination, Dynamic, DynamicReader, Generation, Source},
+    figures::{
+        units::{Px, UPx},
+        FloatConversion, IntoSigned, IntoUnsigned, Point, Rect, Size,
+    },
+    value::{Destination, Dynamic, DynamicReader, Generation, Source, Value},
     widget::Widget,
+    widgets::image::{Aspect, ImageScaling},
     ConstraintLimit,
 };
 
 use crate::{
     pipeline::{VideoPrimitive, VideoRO},
-    video::Video,
+    video::{Internal, Video},
     Error,
 };
 
@@ -26,6 +30,7 @@ pub struct VideoPlayer {
     subtitles: Dynamic<Option<String>>,
     frame: Dynamic<()>,
     last_frame: Generation,
+    scaling: Value<ImageScaling>,
 }
 
 impl VideoPlayer {
@@ -37,6 +42,7 @@ impl VideoPlayer {
             video,
             last_frame: Generation::default(),
             frame,
+            scaling: Default::default(),
         }
     }
 
@@ -60,6 +66,41 @@ impl VideoPlayer {
     /// Gets a read handle on the inner Video object. Can be used to control playback and get metadata.
     pub fn video(&self) -> &Video {
         &self.video
+    }
+
+    fn calculate_video_rect(
+        &self,
+        video: &Internal,
+        within_size: Size<UPx>,
+        context: &mut GraphicsContext<'_, '_, '_, '_>,
+    ) -> Rect<Px> {
+        let within_size = within_size.into_signed();
+        let size = Size {
+            width: Px::new(video.width),
+            height: Px::new(video.height),
+        };
+        match self.scaling.get_tracking_invalidate(context) {
+            ImageScaling::Aspect { mode, orientation } => {
+                let scale_width = within_size.width.into_float() / size.width.into_float();
+                let scale_height = within_size.height.into_float() / size.height.into_float();
+
+                let effective_scale = match mode {
+                    Aspect::Fill => scale_width.max(scale_height),
+                    Aspect::Fit => scale_width.min(scale_height),
+                };
+                let scaled = size * effective_scale;
+
+                let x = (within_size.width - scaled.width) * *orientation.width;
+                let y = (within_size.height - scaled.height) * *orientation.height;
+
+                Rect::new(Point::new(x, y), scaled)
+            }
+            ImageScaling::Stretch => within_size.into(),
+            ImageScaling::Scale(factor) => {
+                let size = size.map(|px| px * factor);
+                size.into()
+            }
+        }
     }
 }
 
@@ -93,8 +134,11 @@ impl Widget for VideoPlayer {
     fn layout(
         &mut self,
         available_space: Size<ConstraintLimit>,
-        _context: &mut LayoutContext<'_, '_, '_, '_>,
+        context: &mut LayoutContext<'_, '_, '_, '_>,
     ) -> Size<UPx> {
-        available_space.map(ConstraintLimit::max)
+        let inner = self.video.read();
+        let rect =
+            self.calculate_video_rect(&inner, available_space.map(ConstraintLimit::max), context);
+        rect.size.into_unsigned()
     }
 }

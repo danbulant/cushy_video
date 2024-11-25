@@ -1,6 +1,7 @@
 // This file is taken nearly one to one from https://github.com/jazzfool/iced_video_player
 use crate::Error;
 use cushy::value::{Destination, Dynamic};
+use glib::property::PropertyGet;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
 use gstreamer_app::prelude::*;
